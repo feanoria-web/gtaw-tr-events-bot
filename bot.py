@@ -541,6 +541,25 @@ async def before_reminder():
 
 
 # ---------------------------------------------------------------------------
+# Prefix Komutlari
+# ---------------------------------------------------------------------------
+
+
+@bot.command(name="refresh")
+@commands.is_owner()
+async def cmd_refresh(ctx: commands.Context):
+    """Slash komutlarini yeniden senkronize eder. (Sadece bot sahibi)"""
+    msg = await ctx.send("Slash komutlari senkronize ediliyor...")
+    try:
+        synced = await bot.tree.sync()
+        await msg.edit(content=f"Tamamlandi: {len(synced)} komut senkronize edildi.")
+        log.info("Manuel sync: %d komut", len(synced))
+    except Exception as exc:
+        await msg.edit(content=f"Hata: {exc}")
+        log.error("Sync hatasi: %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # Giris Noktasi
 # ---------------------------------------------------------------------------
 
