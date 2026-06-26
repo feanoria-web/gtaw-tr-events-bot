@@ -414,6 +414,52 @@ async def cmd_create(
     log.info("Event olusturuldu: %s (%s) - %s", name, eid, dt.strftime("%d/%m/%Y %H:%M"))
 
 
+@event_group.command(name="list", description="Tum eventleri listele")
+async def cmd_list(interaction: discord.Interaction):
+    if not events_db:
+        await interaction.response.send_message("Henuz hic event olusturulmamis.", ephemeral=True)
+        return
+
+    now = datetime.now()
+    upcoming, past = [], []
+    for eid, ev in events_db.items():
+        date = ev.get("date")
+        entry = (eid, ev, date)
+        if date and date >= now:
+            upcoming.append(entry)
+        else:
+            past.append(entry)
+
+    upcoming.sort(key=lambda x: x[2] or datetime.min)
+    past.sort(key=lambda x: x[2] or datetime.min, reverse=True)
+
+    embed = discord.Embed(title="\U0001f4cb Event Listesi", color=discord.Color.blurple())
+
+    def fmt_entry(eid, ev, date):
+        date_str = date.strftime("%d/%m/%Y %H:%M") if date else "Tarih yok"
+        admin_id = ev.get("admin_id")
+        admin_str = f"<@{admin_id}>" if admin_id else "Atanmadi"
+        cl = ev.get("checklist", {})
+        done = sum(1 for k, _ in CHECKLIST_ITEMS if cl.get(k))
+        return f"**{ev['name']}** \u2014 {date_str}\nAdmin: {admin_str} | Checklist: {done}/{len(CHECKLIST_ITEMS)} | ID: `{eid}`"
+
+    if upcoming:
+        embed.add_field(
+            name=f"\u23f3 Yaklasan Eventler ({len(upcoming)})",
+            value="\n\n".join(fmt_entry(*e) for e in upcoming[:10]),
+            inline=False,
+        )
+    if past:
+        embed.add_field(
+            name=f"\u2705 Gecmis Eventler ({len(past)})",
+            value="\n\n".join(fmt_entry(*e) for e in past[:5]),
+            inline=False,
+        )
+
+    embed.set_footer(text=f"Toplam {len(events_db)} event")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 @event_group.command(name="admin", description="Bir evente admin ata")
 @app_commands.describe(
     event_id="Event ID'si (olusturulurken gosterilen ID)",
