@@ -548,12 +548,14 @@ async def before_reminder():
 @bot.command(name="refresh")
 @commands.is_owner()
 async def cmd_refresh(ctx: commands.Context):
-    """Slash komutlarini yeniden senkronize eder. (Sadece bot sahibi)"""
+    """Slash komutlarini aninda bu sunucuya senkronize eder. (Sadece bot sahibi)"""
     msg = await ctx.send("Slash komutlari senkronize ediliyor...")
     try:
-        synced = await bot.tree.sync()
+        # Guild sync is instant; global sync can take up to 1 hour
+        bot.tree.copy_global_to(guild=ctx.guild)
+        synced = await bot.tree.sync(guild=ctx.guild)
         await msg.edit(content=f"Tamamlandi: {len(synced)} komut senkronize edildi.")
-        log.info("Manuel sync: %d komut", len(synced))
+        log.info("Manuel guild sync: %d komut (%s)", len(synced), ctx.guild)
     except Exception as exc:
         await msg.edit(content=f"Hata: {exc}")
         log.error("Sync hatasi: %s", exc)
