@@ -104,21 +104,28 @@ WARNING_TEXT = (
 
 RIGHTS_OPTIONS = [
     discord.SelectOption(
-        label="NC Hakki Istiyorum",
-        description="Non-Combatant statusu talep et",
-        value="nc_right",
-        emoji="\U0001f6e1\ufe0f",
-    ),
-    discord.SelectOption(
         label="+1 Karakter Slotu Istiyorum",
         description="Ekstra karakter slotu talep et",
         value="char_slot",
         emoji="\U0001f464",
     ),
+    discord.SelectOption(
+        label="New Character Istiyorum",
+        description="Yeni karakter hakki talep et",
+        value="new_char",
+        emoji="\u2728",
+    ),
+    discord.SelectOption(
+        label="Bir sey talep etmiyorum",
+        description="Herhangi bir hak talebim yok",
+        value="no_request",
+        emoji="\u274e",
+    ),
 ]
 RIGHTS_LABELS = {
-    "nc_right":  "NC (Non-Combatant) Hakki",
-    "char_slot": "+1 Karakter Slotu",
+    "char_slot":  "+1 Karakter Slotu",
+    "new_char":   "New Character",
+    "no_request": "Bir sey talep etmiyorum",
 }
 
 # ---------------------------------------------------------------------------
@@ -138,6 +145,13 @@ class RightsSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         ev     = events_db.get(self.event_id)
         chosen = RIGHTS_LABELS[self.values[0]]
+
+        if self.values[0] == "no_request":
+            await interaction.response.send_message(
+                "\u274e Herhangi bir hak talebiniz olmadigi kaydedildi. Iyi eventler!",
+                ephemeral=True,
+            )
+            return
 
         await interaction.response.send_message(
             f"\U0001f4cb **{chosen}** talebiniz alindi ve event adminine iletildi!{WARNING_TEXT}",
@@ -192,8 +206,9 @@ class JoinButton(discord.ui.Button):
             title=f"\U0001f389 {ev['name']} \u2014 Hak Talebi",
             description=(
                 "Asagidan bir hak talebi secebilirsiniz:\n\n"
-                "\U0001f6e1\ufe0f **NC Hakki Istiyorum** \u2014 Non-Combatant statusu talep et\n"
-                "\U0001f464 **+1 Karakter Slotu Istiyorum** \u2014 Ekstra karakter slotu talep et"
+                "\U0001f464 **+1 Karakter Slotu Istiyorum** \u2014 Ekstra karakter slotu talep et\n"
+                "\u2728 **New Character Istiyorum** \u2014 Yeni karakter hakki talep et\n"
+                "\u274e **Bir sey talep etmiyorum** \u2014 Herhangi bir hak talebim yok"
                 + WARNING_TEXT
             ),
             color=discord.Color.orange(),
