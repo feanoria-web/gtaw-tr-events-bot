@@ -184,11 +184,15 @@ class RightsSelect(discord.ui.Select):
             channel = bot.get_channel(RIGHTS_LOG_CHANNEL_ID)
             if channel and guild:
                 event_name = ev["name"] if ev else self.event_id
+                approve_view = ApproveRightView(self.event_id, interaction.user.id)
+                bot.add_view(approve_view)
                 await channel.send(
                     f"<@&{RIGHTS_PING_ROLE_ID}>\n"
                     f"\U0001f4e8 **Hak Talebi** | **{event_name}** eventi\n"
                     f"\U0001f464 Talep eden: {interaction.user.mention} (`{interaction.user}`)\n"
-                    f"\U0001f3f7\ufe0f Talep: **{chosen}**"
+                    f"\U0001f3f7\ufe0f Talep: **{chosen}**\n\n"
+                    f"Hakki verdikten sonra asagidaki butona basin.",
+                    view=approve_view,
                 )
         except Exception as exc:
             log.warning("Hak talebi kanal mesaji hatasi: %s", exc)
@@ -327,6 +331,81 @@ class ChecklistView(discord.ui.View):
 
 
 # ---------------------------------------------------------------------------
+# Views - Hak Onay Butonu (Kalici / Persistent)
+# ---------------------------------------------------------------------------
+
+
+class ApproveRightButton(discord.ui.Button):
+    def __init__(self, event_id: str, user_id: int):
+        super().__init__(
+            label="Hakki Verdim \u2705",
+            style=discord.ButtonStyle.green,
+            custom_id=f"approve:{event_id}:{user_id}",
+        )
+        self.event_id = event_id
+        self.user_id  = user_id
+
+    async def callback(self, interaction: discord.Interaction):
+        ev = events_db.get(self.event_id)
+
+        # Zaten onaylandiysa tekrar isleme
+        approved = ev.get("approved_requests", []) if ev else []
+        if str(self.user_id) in approved:
+            await interaction.response.send_message(
+                "Bu talep zaten daha once onaylandi.", ephemeral=True
+            )
+            return
+
+        # Onay durumunu kaydet
+        if ev is not None:
+            ev.setdefault("approved_requests", []).append(str(self.user_id))
+            save_data()
+
+        right_val = ev.get("requests", {}).get(str(self.user_id), "") if ev else ""
+        chosen    = RIGHTS_LABELS.get(right_val, "Hak")
+        ev_name   = ev["name"] if ev else self.event_id
+
+        # Butonu devre disi birak
+        self.disabled = True
+        self.label    = f"Onaylandi \u2014 {interaction.user.display_name}"
+        self.style    = discord.ButtonStyle.grey
+        await interaction.response.edit_message(view=self.view)
+
+        guild = interaction.guild
+
+        # Talep eden kullaniciya DM
+        try:
+            member = guild.get_member(self.user_id) if guild else bot.get_user(self.user_id)
+            if member:
+                await member.send(
+                    f"\u2705 **{chosen}** talebiniz onaylandi!\n"
+                    f"**{ev_name}** eventi icin hakkiniz verildi."
+                )
+        except Exception as exc:
+            log.warning("Kullanici onay DM hatasi: %s", exc)
+
+        # Event adminine DM
+        if ev and ev.get("admin_id"):
+            try:
+                admin = guild.get_member(ev["admin_id"]) if guild else bot.get_user(ev["admin_id"])
+                if admin:
+                    await admin.send(
+                        f"\u2705 **{ev_name}** eventi \u2014 <@{self.user_id}> kullanicisinin "
+                        f"**{chosen}** talebi onaylandi."
+                    )
+            except Exception as exc:
+                log.warning("Admin onay DM hatasi: %s", exc)
+
+        log.info("Hak talebi onaylandi: event=%s user=%s onaylayan=%s", self.event_id, self.user_id, interaction.user)
+
+
+class ApproveRightView(discord.ui.View):
+    def __init__(self, event_id: str, user_id: int):
+        super().__init__(timeout=None)
+        self.add_item(ApproveRightButton(event_id, user_id))
+
+
+# ---------------------------------------------------------------------------
 # Bot Sinifi
 # ---------------------------------------------------------------------------
 
@@ -339,6 +418,10 @@ class GTAWEventsBot(commands.Bot):
             self.add_view(JoinView(eid))
             if ev.get("admin_id"):
                 self.add_view(ChecklistView(eid))
+            approved = ev.get("approved_requests", [])
+            for uid_str, right_val in ev.get("requests", {}).items():
+                if uid_str not in approved and right_val != "no_request":
+                    self.add_view(ApproveRightView(eid, int(uid_str)))
         self.tree.add_command(event_group)
         await self.tree.sync()
         log.info("Slash komutlari senkronize edildi.")
