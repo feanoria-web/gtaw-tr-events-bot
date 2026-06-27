@@ -32,6 +32,8 @@ log = logging.getLogger("gtaw_events")
 
 TOKEN = os.getenv("DISCORD_TOKEN", "")
 EVENTS_TEAM_ROLE_ID = int(os.getenv("EVENTS_TEAM_ROLE_ID", "0"))
+RIGHTS_LOG_CHANNEL_ID = 1454865654044950629
+RIGHTS_PING_ROLE_ID   = 1391485019633090731
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -146,6 +148,11 @@ class RightsSelect(discord.ui.Select):
         ev     = events_db.get(self.event_id)
         chosen = RIGHTS_LABELS[self.values[0]]
 
+        # Katilimciyi ve talebini kaydet
+        if ev is not None:
+            ev.setdefault("requests", {})[str(interaction.user.id)] = self.values[0]
+            save_data()
+
         if self.values[0] == "no_request":
             await interaction.response.send_message(
                 "\u274e Herhangi bir hak talebiniz olmadigi kaydedildi. Iyi eventler!",
@@ -158,9 +165,11 @@ class RightsSelect(discord.ui.Select):
             ephemeral=True,
         )
 
+        guild = interaction.guild
+
+        # Admin'e DM
         if ev and ev.get("admin_id"):
             try:
-                guild = interaction.guild
                 admin = guild.get_member(ev["admin_id"]) if guild else None
                 if admin:
                     await admin.send(
@@ -169,6 +178,20 @@ class RightsSelect(discord.ui.Select):
                     )
             except Exception as exc:
                 log.warning("Admin DM hatasi: %s", exc)
+
+        # Hak talebi kanalina yaz
+        try:
+            channel = bot.get_channel(RIGHTS_LOG_CHANNEL_ID)
+            if channel and guild:
+                event_name = ev["name"] if ev else self.event_id
+                await channel.send(
+                    f"<@&{RIGHTS_PING_ROLE_ID}>\n"
+                    f"\U0001f4e8 **Hak Talebi** | **{event_name}** eventi\n"
+                    f"\U0001f464 Talep eden: {interaction.user.mention} (`{interaction.user}`)\n"
+                    f"\U0001f3f7\ufe0f Talep: **{chosen}**"
+                )
+        except Exception as exc:
+            log.warning("Hak talebi kanal mesaji hatasi: %s", exc)
 
 
 class RightsView(discord.ui.View):
@@ -386,6 +409,7 @@ async def cmd_create(
         "checklist":     {k: False for k, _ in CHECKLIST_ITEMS},
         "last_reminder": None,
         "guild_id":      interaction.guild_id,
+        "requests":      {},
     }
     save_data()
 
@@ -521,6 +545,89 @@ async def cmd_admin(interaction: discord.Interaction, event_id: str, user: disco
 
 @cmd_admin.autocomplete("event_id")
 async def autocomplete_event_id(interaction: discord.Interaction, current: str):
+    q = current.lower()
+    choices = [
+        app_commands.Choice(name=f"{ev['name']}  [{eid}]", value=eid)
+        for eid, ev in events_db.items()
+        if q in eid or q in ev["name"].lower()
+    ]
+    return choices[:25]
+
+
+@event_group.command(name="detay", description="Bir eventin detaylarini goruntule")
+@app_commands.describe(event_id="Event ID'si (olusturulurken gosterilen ID)")
+async def cmd_detay(interaction: discord.Interaction, event_id: str):
+    ev = events_db.get(event_id)
+    if not ev:
+        await interaction.response.send_message(
+            f"\u274c `{event_id}` ID'li event bulunamadi.", ephemeral=True
+        )
+        return
+
+    embed = discord.Embed(
+        title=f"\U0001f4cb {ev['name']} \u2014 Event Detaylari",
+        color=discord.Color.blurple(),
+    )
+
+    date = ev.get("date")
+    embed.add_field(
+        name="\U0001f4c5 Tarih",
+        value=date.strftime("%d/%m/%Y %H:%M") if date else "Belirtilmedi",
+        inline=True,
+    )
+    embed.add_field(name="\U0001f194 Event ID", value=f"`{event_id}`", inline=True)
+
+    admin_id = ev.get("admin_id")
+    embed.add_field(
+        name="\U0001f464 Yoneten Admin",
+        value=f"<@{admin_id}>" if admin_id else "Atanmadi",
+        inline=True,
+    )
+
+    if ev.get("description"):
+        embed.add_field(name="\U0001f4dd Aciklama", value=ev["description"], inline=False)
+
+    requests: dict = ev.get("requests", {})
+    if requests:
+        # Katilimci listesi
+        participants = "\n".join(f"<@{uid}>" for uid in requests)
+        embed.add_field(
+            name=f"\U0001f465 Katilimcilar ({len(requests)})",
+            value=participants,
+            inline=False,
+        )
+
+        # Hak talepleri (no_request haric)
+        right_lines = [
+            f"<@{uid}> \u2014 {RIGHTS_LABELS.get(val, val)}"
+            for uid, val in requests.items()
+            if val != "no_request"
+        ]
+        embed.add_field(
+            name="\U0001f4e8 Hak Talepleri",
+            value="\n".join(right_lines) if right_lines else "Kimse hak talep etmedi",
+            inline=False,
+        )
+    else:
+        embed.add_field(
+            name="\U0001f465 Katilimcilar",
+            value="Henuz kimse katilmadi",
+            inline=False,
+        )
+
+    cl = ev.get("checklist", {})
+    done = sum(1 for k, _ in CHECKLIST_ITEMS if cl.get(k))
+    embed.add_field(
+        name="\u2705 Checklist",
+        value=f"{done}/{len(CHECKLIST_ITEMS)} tamamlandi",
+        inline=True,
+    )
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@cmd_detay.autocomplete("event_id")
+async def autocomplete_detay_event_id(interaction: discord.Interaction, current: str):
     q = current.lower()
     choices = [
         app_commands.Choice(name=f"{ev['name']}  [{eid}]", value=eid)
