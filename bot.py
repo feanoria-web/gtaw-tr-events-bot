@@ -2,8 +2,8 @@
 GTAW:TR Events Team Discord Botu
 =================================
 Komutlar:
-  /event create <name> <date> [description]  - Event olustur ve duyur
-  /event admin  <event_id> <user>            - Event'e admin ata
+  /et create <name> <date> [description]  - Event olustur ve duyur
+  /et admin  <event_id> <user>            - Event'e admin ata
 
 Ozellikler:
   - Event duyurusu + Events Team etiketi + Katil butonu
@@ -448,7 +448,7 @@ bot = GTAWEventsBot(command_prefix="!", intents=intents)
 # ---------------------------------------------------------------------------
 
 event_group = app_commands.Group(
-    name="event",
+    name="et",
     description="GTAW:TR Events Team komutlari",
 )
 
